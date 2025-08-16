@@ -19,47 +19,53 @@ npm install
 npm start
 ```
 
-### Deployment on Render.com
+### Deployment on Railway.app (Recommended)
+
+Railway.app supports both HTTP and RTMP ports, making it perfect for this application.
 
 1. Fork/clone this repository
-2. Connect your GitHub repository to Render.com
-3. Create a new Web Service with these settings:
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-   - **Plan**: Starter (or higher for more clients)
+2. Connect your GitHub repository to Railway.app
+3. Railway will auto-detect and deploy your Node.js app
+4. Configure the environment variables listed below
 
-### Environment Variables for Render.com
+**Why Railway.app over Render.com?**
+- ✅ Supports RTMP port 1935 (Render.com only supports HTTP)
+- ✅ Better networking capabilities
+- ✅ More affordable ($5/month vs $7/month)
+- ✅ Easier RTMP configuration
 
-Set these in your Render.com dashboard:
+### Environment Variables for Railway.app
+
+Set these in your Railway.app dashboard:
 
 | Variable | Value | Description |
 |----------|-------|-------------|
 | `NODE_ENV` | `production` | Production environment |
-| `MAX_CLIENTS` | `100` | Maximum concurrent clients |
-| `ENABLE_CLUSTERING` | `false` | Disable for Starter plan |
+| `MAX_CLIENTS` | `150` | Maximum concurrent clients |
+| `ENABLE_CLUSTERING` | `false` | Disable for single instance |
 | `RTMP_SECRET` | `your-secret-key` | RTMP authentication secret |
 | `FFMPEG_PATH` | `/usr/bin/ffmpeg` | FFmpeg binary path |
 
 ### Port Configuration
 
-- **HTTP Server**: Uses `process.env.PORT` (automatically set by Render.com)
-- **RTMP Server**: Port 1935 (internal)
+- **HTTP Server**: Uses `process.env.PORT` (automatically set by Railway.app)
+- **RTMP Server**: Port 1935 (Railway.app will expose this)
 - **Media Server**: Port 8000 (internal)
 
-### OBS Setup
+### OBS Setup for Railway.app
 
 1. Open OBS Studio
 2. Go to Settings → Stream
 3. Service: Custom
-4. Server: `rtmp://your-app.onrender.com:1935/live`
+4. Server: `rtmp://your-app-name.up.railway.app:1935/live`
 5. Stream Key: `stream`
 6. Click "Start Streaming"
 
 ### Monitoring
 
-- Health Check: `https://your-app.onrender.com/health`
-- Stream Status: `https://your-app.onrender.com/stream-health`
-- Statistics: `https://your-app.onrender.com/stats`
+- Health Check: `https://your-app-name.up.railway.app/health`
+- Stream Status: `https://your-app-name.up.railway.app/stream-health`
+- Statistics: `https://your-app-name.up.railway.app/stats`
 
 ## Architecture
 

@@ -17,13 +17,13 @@ const io = socketIo(server, {
   },
   transports: ['websocket', 'polling']
 });
-const HTTP_PORT = process.env.PORT || 10000; // Render.com uses PORT env var
-const RTMP_PORT = process.env.RTMP_PORT || 1935;
+const HTTP_PORT = process.env.PORT || 3000; // Railway.app uses PORT env var
+const RTMP_PORT = process.env.RTMP_PORT || 1935; // Railway supports custom ports
 
-// Production configuration - Adjusted for Render.com
-const MAX_CLIENTS = process.env.MAX_CLIENTS || 100; // Reduced for starter plan
+// Production configuration - Optimized for Railway.app
+const MAX_CLIENTS = process.env.MAX_CLIENTS || 150; // Railway can handle more clients
 const ENABLE_CLUSTERING = process.env.ENABLE_CLUSTERING === 'true' && process.env.NODE_ENV === 'production';
-const numCPUs = ENABLE_CLUSTERING ? Math.min(os.cpus().length, 2) : 1; // Limit CPUs for Render.com
+const numCPUs = ENABLE_CLUSTERING ? Math.min(os.cpus().length, 4) : 1; // Railway has better CPU support
 
 // Global variables to manage streams
 let currentStream = null;
@@ -542,23 +542,28 @@ function startServer() {
 
   // Start HTTP server with production settings
   server.listen(HTTP_PORT, '0.0.0.0', () => {
-    const ip = getLocalIP();
+    const railwayDomain = process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN;
+    const publicUrl = railwayDomain ? `https://${railwayDomain}` : `http://localhost:${HTTP_PORT}`;
+    const rtmpUrl = railwayDomain ? `rtmp://${railwayDomain}:${RTMP_PORT}/live/stream` : `rtmp://localhost:${RTMP_PORT}/live/stream`;
     
-    console.log('🎵 Production WebRTC Radio Server');
-    console.log('==================================');
+    console.log('🎵 Production WebRTC Radio Server - Railway.app');
+    console.log('==============================================');
     console.log(`🚀 Process ID: ${process.pid}`);
     console.log(`⚡ Workers: ${ENABLE_CLUSTERING ? numCPUs : 1}`);
     console.log(`👥 Max Clients: ${MAX_CLIENTS}`);
-    console.log(`📻 Local Web Player: http://localhost:${HTTP_PORT}`);
-    console.log(`🌐 Network Web Player: http://${ip}:${HTTP_PORT}`);
-    console.log(`📡 RTMP Server: rtmp://localhost:${RTMP_PORT}/live/stream`);
-    console.log(`🔗 WebSocket: ws://localhost:${HTTP_PORT}`);
+    console.log(`📻 Web Player: ${publicUrl}`);
+    console.log(`📡 RTMP Server: ${rtmpUrl}`);
+    console.log(`🔗 WebSocket: ${publicUrl.replace('http', 'ws')}`);
     console.log('');
-    console.log('🎬 OBS Setup:');
+    console.log('🎬 OBS Setup for Railway.app:');
     console.log('   1. Open OBS Studio');
     console.log('   2. Go to Settings → Stream');
     console.log('   3. Service: Custom');
-    console.log(`   4. Server: rtmp://localhost:${RTMP_PORT}/live`);
+    if (railwayDomain) {
+      console.log(`   4. Server: rtmp://${railwayDomain}:${RTMP_PORT}/live`);
+    } else {
+      console.log(`   4. Server: rtmp://localhost:${RTMP_PORT}/live`);
+    }
     console.log('   5. Stream Key: stream');
     console.log('   6. Click "Start Streaming"');
     console.log('');
@@ -569,8 +574,8 @@ function startServer() {
     console.log('   • Browser-native playback');
     console.log('');
     console.log('📊 Monitoring:');
-    console.log(`   Stats: http://localhost:${HTTP_PORT}/stats`);
-    console.log(`   Health: http://localhost:${HTTP_PORT}/health`);
+    console.log(`   Stats: ${publicUrl}/stats`);
+    console.log(`   Health: ${publicUrl}/health`);
     console.log('');
   });
 
