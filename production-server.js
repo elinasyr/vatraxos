@@ -18,7 +18,7 @@ const io = socketIo(server, {
   transports: ['websocket', 'polling']
 });
 const HTTP_PORT = process.env.PORT || 3000; // Railway.app uses PORT env var
-const RTMP_PORT = process.env.RTMP_PORT || 1935; // Railway supports custom ports
+const RTMP_PORT = process.env.RTMP_PORT || 8080; // Try port 8080 instead of 1935 for Railway
 
 // Production configuration - Optimized for Railway.app
 const MAX_CLIENTS = process.env.MAX_CLIENTS || 150; // Railway can handle more clients
@@ -543,8 +543,21 @@ function startServer() {
   // Start HTTP server with production settings
   server.listen(HTTP_PORT, '0.0.0.0', () => {
     const railwayDomain = process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN;
+    const railwayTcpProxy = process.env.RAILWAY_TCP_PROXY_DOMAIN; // Railway TCP proxy domain
     const publicUrl = railwayDomain ? `https://${railwayDomain}` : `http://localhost:${HTTP_PORT}`;
-    const rtmpUrl = railwayDomain ? `rtmp://${railwayDomain}:${RTMP_PORT}/live/stream` : `rtmp://localhost:${RTMP_PORT}/live/stream`;
+    
+    // Determine RTMP URL based on available Railway services
+    let rtmpUrl;
+    if (railwayTcpProxy) {
+      // Railway TCP proxy available
+      rtmpUrl = `rtmp://${railwayTcpProxy}:${RTMP_PORT}/live/stream`;
+    } else if (railwayDomain) {
+      // Try direct Railway domain (might not work)
+      rtmpUrl = `rtmp://${railwayDomain}:${RTMP_PORT}/live/stream`;
+    } else {
+      // Local development
+      rtmpUrl = `rtmp://localhost:${RTMP_PORT}/live/stream`;
+    }
     
     console.log('🎵 Production WebRTC Radio Server - Railway.app');
     console.log('==============================================');
@@ -555,17 +568,42 @@ function startServer() {
     console.log(`📡 RTMP Server: ${rtmpUrl}`);
     console.log(`🔗 WebSocket: ${publicUrl.replace('http', 'ws')}`);
     console.log('');
+    
+    // Enhanced OBS setup instructions
     console.log('🎬 OBS Setup for Railway.app:');
     console.log('   1. Open OBS Studio');
     console.log('   2. Go to Settings → Stream');
     console.log('   3. Service: Custom');
-    if (railwayDomain) {
+    
+    if (railwayTcpProxy) {
+      console.log(`   4. Server: rtmp://${railwayTcpProxy}:${RTMP_PORT}/live`);
+      console.log(`   5. Stream Key: stream`);
+      console.log('');
+      console.log('✅ Railway TCP Proxy detected - RTMP should work!');
+    } else if (railwayDomain) {
       console.log(`   4. Server: rtmp://${railwayDomain}:${RTMP_PORT}/live`);
+      console.log(`   5. Stream Key: stream`);
+      console.log('');
+      console.log('⚠️  Railway TCP proxy not detected. If RTMP fails:');
+      console.log('   • Check Railway dashboard for TCP proxy settings');
+      console.log('   • Try using port 8080 instead of 1935');
+      console.log('   • Consider migrating to Fly.io for better RTMP support');
     } else {
       console.log(`   4. Server: rtmp://localhost:${RTMP_PORT}/live`);
+      console.log(`   5. Stream Key: stream`);
     }
-    console.log('   5. Stream Key: stream');
     console.log('   6. Click "Start Streaming"');
+    console.log('');
+    console.log('🔧 RTMP Troubleshooting:');
+    console.log(`   • Test connection: telnet ${railwayDomain || 'localhost'} ${RTMP_PORT}`);
+    console.log('   • If port 8080 fails, try 1935, 1936, or 8935');
+    console.log('   • Check Railway logs for RTMP server startup');
+    console.log('   • Alternative: Use ngrok for local development');
+    console.log('');
+    console.log('🚀 Quick RTMP Test:');
+    console.log(`   ffmpeg -re -f lavfi -i sine=frequency=1000:duration=5 \\`);
+    console.log(`     -c:a aac -f flv ${rtmpUrl}`);
+    console.log('');
     console.log('');
     console.log('🌐 WebRTC Features:');
     console.log('   • Real-time audio streaming');
