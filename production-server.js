@@ -17,13 +17,13 @@ const io = socketIo(server, {
   },
   transports: ['websocket', 'polling']
 });
-const HTTP_PORT = process.env.PORT || 3000;
-const RTMP_PORT = 1935;
+const HTTP_PORT = process.env.PORT || 10000; // Render.com uses PORT env var
+const RTMP_PORT = process.env.RTMP_PORT || 1935;
 
-// Production configuration
-const MAX_CLIENTS = process.env.MAX_CLIENTS || 200;
-const ENABLE_CLUSTERING = process.env.ENABLE_CLUSTERING === 'true';
-const numCPUs = os.cpus().length;
+// Production configuration - Adjusted for Render.com
+const MAX_CLIENTS = process.env.MAX_CLIENTS || 100; // Reduced for starter plan
+const ENABLE_CLUSTERING = process.env.ENABLE_CLUSTERING === 'true' && process.env.NODE_ENV === 'production';
+const numCPUs = ENABLE_CLUSTERING ? Math.min(os.cpus().length, 2) : 1; // Limit CPUs for Render.com
 
 // Global variables to manage streams
 let currentStream = null;
@@ -45,7 +45,7 @@ const config = {
     // Production optimizations
     allow_origin: '*',
     relay: {
-      ffmpeg: '/usr/local/bin/ffmpeg',
+      ffmpeg: process.env.FFMPEG_PATH || '/usr/bin/ffmpeg', // Render.com FFmpeg path
       tasks: [
         {
           app: 'live',
@@ -58,7 +58,7 @@ const config = {
   http: {
     port: 8000,
     allow_origin: '*',
-    mediaroot: './media',
+    mediaroot: process.env.MEDIA_PATH || './media', // Configurable media path
     // Enable HTTP caching
     cache_control: {
       'max-age': 30
@@ -285,7 +285,8 @@ function startServer() {
     // Wait a moment for RTMP stream to be fully established
     setTimeout(() => {
       // Optimized FFmpeg parameters for 150+ users
-      currentStream = spawn('ffmpeg', [
+      const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+      currentStream = spawn(ffmpegPath, [
         '-i', 'rtmp://localhost:1935/live/stream',
         '-vn',                          // No video
         '-c:a', 'libmp3lame',           // MP3 codec

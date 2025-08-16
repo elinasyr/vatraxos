@@ -2,9 +2,9 @@
   "name": "simple-radio",
   "version": "1.0.0",
   "description": "A simple radio server that streams desktop audio to a web-based music player",
-  "main": "server.js",
+  "main": "production-server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node production-server.js",
     "rtmp": "node rtmp-server.js",
     "icecast": "node icecast-server.js",
     "direct": "node direct-server.js",

@@ -45,3 +45,9 @@ media/
 # Temporary files
 tmp/
 temp/
+
+# Render.com
+.render/
+
+# Docker
+.dockerignore
