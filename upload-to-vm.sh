@@ -7,14 +7,15 @@ set -e
 
 # Configuration
 INSTANCE_NAME=${1:-"rtmp-server"}
-ZONE=${2:-"us-central1-a"}
-PROJECT_ID=${3:-$(gcloud config get-value project)}
+ZONE=${2:-"europe-west3-a"}
+PROJECT_ID=${3:-"future-spot-469205-s5"}  # Default to your calt project
 
 echo "📤 Uploading code to VM RTMP Server"
 echo "====================================="
 echo "Instance: $INSTANCE_NAME"
 echo "Zone: $ZONE"
 echo "Project: $PROJECT_ID"
+echo "Account: $(gcloud config get-value account)"
 echo ""
 
 # Check if gcloud is installed
@@ -56,6 +57,15 @@ EOF
 
 # Upload files to VM
 echo "📤 Uploading files to VM..."
+
+# First, create the directory and set permissions
+gcloud compute ssh "$INSTANCE_NAME" --zone="$ZONE" --project="$PROJECT_ID" --command="
+    sudo mkdir -p /opt/rtmp-server && \
+    sudo chown -R $USER:$USER /opt/rtmp-server && \
+    sudo chmod 755 /opt/rtmp-server
+"
+
+# Now upload the files
 gcloud compute scp --recurse "$TEMP_DIR"/* "$INSTANCE_NAME":/opt/rtmp-server/ --zone="$ZONE" --project="$PROJECT_ID"
 
 # Clean up temp directory
@@ -64,8 +74,36 @@ rm -rf "$TEMP_DIR"
 # SSH into VM and set up the service
 echo "🔧 Setting up service on VM..."
 gcloud compute ssh "$INSTANCE_NAME" --zone="$ZONE" --project="$PROJECT_ID" --command="
+    echo '📦 Installing Node.js and dependencies...' && \
+    sudo apt-get update && \
+    sudo apt-get install -y curl software-properties-common && \
+    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && \
+    sudo apt-get install -y nodejs ffmpeg && \
+    echo '✅ Node.js and FFmpeg installed' && \
     cd /opt/rtmp-server && \
+    echo '📦 Installing npm dependencies...' && \
     sudo npm install && \
+    echo '🔧 Creating systemd service...' && \
+    sudo tee /etc/systemd/system/rtmp-server.service > /dev/null << 'SERVICE_EOF'
+[Unit]
+Description=RTMP Streaming Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/rtmp-server
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=RTMP_PORT=1935
+ExecStart=/usr/bin/node production-server.js
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+SERVICE_EOF
+    echo '🚀 Starting service...' && \
     sudo systemctl daemon-reload && \
     sudo systemctl enable rtmp-server && \
     sudo systemctl restart rtmp-server && \

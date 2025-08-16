@@ -3,8 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Production WebRTC Radio</title>
+    <title>VATRAXOS - Silent Party</title>
     <script src="/socket.io/socket.io.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -13,178 +16,218 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0a0a0a;
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            color: white;
+            color: #f5f5f5;
+            overflow: hidden;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 30% 80%, rgba(255, 87, 51, 0.08) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 20%, rgba(255, 165, 0, 0.06) 0%, transparent 50%),
+                        radial-gradient(circle at 40% 40%, rgba(255, 255, 255, 0.02) 0%, transparent 50%);
+            pointer-events: none;
         }
 
         .radio-container {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(20px);
-            border-radius: 20px;
-            padding: 40px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            background: rgba(20, 20, 20, 0.7);
+            backdrop-filter: blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 4px;
+            padding: 60px 40px;
             text-align: center;
             min-width: 400px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 500px;
+            position: relative;
+            box-shadow: 0 4px 40px rgba(0, 0, 0, 0.5);
         }
 
-        .logo {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            font-weight: 300;
+        .logo-section {
+            margin-bottom: 50px;
+        }
+
+        .logo-image {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 20px;
+            filter: grayscale(20%) contrast(1.1);
+        }
+
+        .brand-name {
+            font-family: 'Space Mono', monospace;
+            font-size: 1.8rem;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            color: #ffffff;
+            margin-bottom: 8px;
+            text-transform: uppercase;
         }
 
         .subtitle {
-            opacity: 0.8;
-            margin-bottom: 30px;
-            font-size: 1.1rem;
+            font-weight: 300;
+            font-size: 0.85rem;
+            color: #999;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .location {
+            font-family: 'Space Mono', monospace;
+            font-size: 0.7rem;
+            color: #666;
+            margin-top: 5px;
+            letter-spacing: 0.1em;
         }
 
         .controls {
-            margin: 30px 0;
+            margin: 40px 0;
         }
 
         .play-button {
-            background: linear-gradient(135deg, #ff6b6b, #ee5a52);
-            border: none;
-            border-radius: 50px;
-            padding: 15px 30px;
-            color: white;
-            font-size: 1.2rem;
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 0;
+            padding: 16px 40px;
+            color: #ffffff;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.9rem;
+            font-weight: 400;
+            letter-spacing: 0.1em;
             cursor: pointer;
             transition: all 0.3s ease;
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
-            min-width: 120px;
+            text-transform: uppercase;
+            min-width: 160px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .play-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+            transition: left 0.5s ease;
         }
 
         .play-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.3);
+            border-color: rgba(255, 255, 255, 0.6);
+            color: #ffffff;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.1);
+        }
+
+        .play-button:hover::before {
+            left: 100%;
         }
 
         .play-button:disabled {
-            background: #666;
+            border-color: rgba(255, 255, 255, 0.1);
+            color: #666;
             cursor: not-allowed;
-            transform: none;
         }
 
-        .volume-container {
-            margin: 20px 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px;
-        }
-
-        .volume-slider {
-            width: 200px;
-            height: 6px;
-            border-radius: 3px;
-            background: rgba(255, 255, 255, 0.3);
-            outline: none;
-            appearance: none;
-        }
-
-        .volume-slider::-webkit-slider-thumb {
-            appearance: none;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: white;
-            cursor: pointer;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        .play-button:disabled:hover {
+            box-shadow: none;
         }
 
         .status {
-            margin-top: 20px;
-            padding: 15px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 10px;
-            font-size: 0.9rem;
+            margin-top: 30px;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.75rem;
+            color: #666;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            padding: 12px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .status.connected {
-            background: rgba(46, 204, 113, 0.3);
+            color: #aaa;
         }
 
         .status.error {
-            background: rgba(231, 76, 60, 0.3);
+            color: #ff6b6b;
         }
 
-        .visualizer {
+        .minimal-viz {
             width: 100%;
-            height: 60px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 10px;
-            margin: 20px 0;
-            display: flex;
-            align-items: end;
-            justify-content: center;
-            gap: 2px;
-            padding: 5px;
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 30px 0;
+            position: relative;
+            overflow: hidden;
         }
 
-        .bar {
-            width: 4px;
-            background: linear-gradient(to top, #ff6b6b, #feca57);
-            border-radius: 2px;
-            transition: height 0.1s ease;
-            min-height: 2px;
+        .minimal-viz::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+            animation: pulse 3s ease-in-out infinite;
         }
 
-        .stats {
-            margin-top: 20px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            font-size: 0.8rem;
-            opacity: 0.8;
+        @keyframes pulse {
+            0%, 100% { left: -100%; }
+            50% { left: 100%; }
+        }
+
+        .hidden {
+            display: none !important;
         }
 
         @media (max-width: 480px) {
             .radio-container {
-                padding: 20px;
-                min-width: 300px;
+                padding: 40px 30px;
+                min-width: 320px;
+                margin: 20px;
             }
             
-            .volume-slider {
-                width: 150px;
+            .brand-name {
+                font-size: 1.5rem;
+            }
+            
+            .play-button {
+                padding: 14px 30px;
+                min-width: 140px;
             }
         }
     </style>
 </head>
 <body>
     <div class="radio-container">
-        <div class="logo">🎵 WebRTC Radio</div>
-        <div class="subtitle">High-Quality Real-Time Streaming</div>
+        <div class="logo-section">
+            <img src="vatraxos-profile.jpg" alt="Vatraxos" class="logo-image">
+            <div class="brand-name">Vatraxos</div>
+            <div class="subtitle">Silent Party</div>
+            <div class="location">Serifos Island</div>
+        </div>
         
         <div class="controls">
-            <button id="playButton" class="play-button">▶ Play</button>
+            <button id="playButton" class="play-button">Play</button>
         </div>
         
-        <div class="volume-container">
-            <span>🔊</span>
-            <input type="range" id="volumeSlider" class="volume-slider" min="0" max="100" value="70">
-            <span id="volumeDisplay">70%</span>
-        </div>
-        
-        <div class="visualizer" id="visualizer">
-            <!-- Audio visualization bars will be generated here -->
-        </div>
+        <div class="minimal-viz" id="visualizer"></div>
         
         <div id="status" class="status">Ready to connect...</div>
-        
-        <div class="stats">
-            <div>Latency: <span id="latency">--</span>ms</div>
-            <div>Quality: <span id="quality">--</span></div>
-            <div>Clients: <span id="clients">--</span></div>
-            <div>Uptime: <span id="uptime">--</span></div>
-        </div>
     </div>
 
     <script>
@@ -209,27 +252,18 @@
 
             initializeElements() {
                 this.playButton = document.getElementById('playButton');
-                this.volumeSlider = document.getElementById('volumeSlider');
-                this.volumeDisplay = document.getElementById('volumeDisplay');
                 this.status = document.getElementById('status');
                 this.visualizer = document.getElementById('visualizer');
                 
                 this.playButton.addEventListener('click', () => this.togglePlay());
-                this.volumeSlider.addEventListener('input', (e) => this.setVolume(e.target.value));
                 
                 // Update stats periodically
                 setInterval(() => this.updateStats(), 2000);
             }
 
             createVisualizer() {
-                // Create 40 bars for visualization
-                for (let i = 0; i < 40; i++) {
-                    const bar = document.createElement('div');
-                    bar.className = 'bar';
-                    bar.style.height = '2px';
-                    this.visualizer.appendChild(bar);
-                    this.visualizerBars.push(bar);
-                }
+                // Minimal visualization - just the pulse line
+                // No bars needed for this minimal design
             }
 
             connectWebSocket() {
@@ -322,7 +356,7 @@
                     await this.audioElement.play();
                     
                     this.isPlaying = true;
-                    this.playButton.textContent = '⏸ Pause';
+                    this.playButton.textContent = 'Pause';
                     this.playButton.disabled = false;
                     
                     this.updateStatus('Playing live stream...', 'connected');
@@ -341,7 +375,7 @@
 
             stopAudio() {
                 this.isPlaying = false;
-                this.playButton.textContent = '▶ Play';
+                this.playButton.textContent = 'Play';
                 this.playButton.disabled = false;
                 
                 if (this.audioElement) {
@@ -371,7 +405,6 @@
 
             setVolume(value) {
                 const volume = value / 100;
-                this.volumeDisplay.textContent = value + '%';
                 
                 if (this.gainNode) {
                     this.gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
@@ -383,30 +416,8 @@
             }
 
             startVisualization() {
-                if (!this.analyserNode) return;
-                
-                const bufferLength = this.analyserNode.frequencyBinCount;
-                const dataArray = new Uint8Array(bufferLength);
-                
-                const animate = () => {
-                    if (!this.isPlaying) return;
-                    
-                    this.analyserNode.getByteFrequencyData(dataArray);
-                    
-                    // Update visualizer bars
-                    const barCount = this.visualizerBars.length;
-                    const step = Math.floor(bufferLength / barCount);
-                    
-                    for (let i = 0; i < barCount; i++) {
-                        const value = dataArray[i * step] || 0;
-                        const height = Math.max(2, (value / 255) * 50);
-                        this.visualizerBars[i].style.height = height + 'px';
-                    }
-                    
-                    requestAnimationFrame(animate);
-                };
-                
-                animate();
+                // Minimal visualization is handled by CSS animation
+                // No complex frequency analysis needed for this design
             }
 
             updateStatus(message, type = '') {
@@ -421,16 +432,8 @@
             }
 
             async updateStats() {
-                try {
-                    const response = await fetch('/stats');
-                    const stats = await response.json();
-                    
-                    document.getElementById('clients').textContent = stats.clients.total;
-                    document.getElementById('uptime').textContent = Math.floor(stats.system.uptime / 60) + 'm';
-                    
-                } catch (error) {
-                    console.error('Failed to fetch stats:', error);
-                }
+                // Simplified stats for minimal design
+                // Only update if we need specific metrics
             }
 
             attemptReconnect() {
