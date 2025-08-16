@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production WebRTC Radio</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+
+        .radio-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            min-width: 400px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .logo {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .subtitle {
+            opacity: 0.8;
+            margin-bottom: 30px;
+            font-size: 1.1rem;
+        }
+
+        .controls {
+            margin: 30px 0;
+        }
+
+        .play-button {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a52);
+            border: none;
+            border-radius: 50px;
+            padding: 15px 30px;
+            color: white;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            min-width: 120px;
+        }
+
+        .play-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .play-button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .volume-container {
+            margin: 20px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .volume-slider {
+            width: 200px;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.3);
+            outline: none;
+            appearance: none;
+        }
+
+        .volume-slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: white;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            font-size: 0.9rem;
+        }
+
+        .status.connected {
+            background: rgba(46, 204, 113, 0.3);
+        }
+
+        .status.error {
+            background: rgba(231, 76, 60, 0.3);
+        }
+
+        .visualizer {
+            width: 100%;
+            height: 60px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            margin: 20px 0;
+            display: flex;
+            align-items: end;
+            justify-content: center;
+            gap: 2px;
+            padding: 5px;
+        }
+
+        .bar {
+            width: 4px;
+            background: linear-gradient(to top, #ff6b6b, #feca57);
+            border-radius: 2px;
+            transition: height 0.1s ease;
+            min-height: 2px;
+        }
+
+        .stats {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
+
+        @media (max-width: 480px) {
+            .radio-container {
+                padding: 20px;
+                min-width: 300px;
+            }
+            
+            .volume-slider {
+                width: 150px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="radio-container">
+        <div class="logo">🎵 WebRTC Radio</div>
+        <div class="subtitle">High-Quality Real-Time Streaming</div>
+        
+        <div class="controls">
+            <button id="playButton" class="play-button">▶ Play</button>
+        </div>
+        
+        <div class="volume-container">
+            <span>🔊</span>
+            <input type="range" id="volumeSlider" class="volume-slider" min="0" max="100" value="70">
+            <span id="volumeDisplay">70%</span>
+        </div>
+        
+        <div class="visualizer" id="visualizer">
+            <!-- Audio visualization bars will be generated here -->
+        </div>
+        
+        <div id="status" class="status">Ready to connect...</div>
+        
+        <div class="stats">
+            <div>Latency: <span id="latency">--</span>ms</div>
+            <div>Quality: <span id="quality">--</span></div>
+            <div>Clients: <span id="clients">--</span></div>
+            <div>Uptime: <span id="uptime">--</span></div>
+        </div>
+    </div>
+
+    <script>
+        class WebRTCRadio {
+            constructor() {
+                this.socket = null;
+                this.audioContext = null;
+                this.mediaSource = null;
+                this.sourceBuffer = null;
+                this.audioElement = null;
+                this.isPlaying = false;
+                this.gainNode = null;
+                this.analyserNode = null;
+                this.visualizerBars = [];
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                
+                this.initializeElements();
+                this.createVisualizer();
+                this.connectWebSocket();
+            }
+
+            initializeElements() {
+                this.playButton = document.getElementById('playButton');
+                this.volumeSlider = document.getElementById('volumeSlider');
+                this.volumeDisplay = document.getElementById('volumeDisplay');
+                this.status = document.getElementById('status');
+                this.visualizer = document.getElementById('visualizer');
+                
+                this.playButton.addEventListener('click', () => this.togglePlay());
+                this.volumeSlider.addEventListener('input', (e) => this.setVolume(e.target.value));
+                
+                // Update stats periodically
+                setInterval(() => this.updateStats(), 2000);
+            }
+
+            createVisualizer() {
+                // Create 40 bars for visualization
+                for (let i = 0; i < 40; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'bar';
+                    bar.style.height = '2px';
+                    this.visualizer.appendChild(bar);
+                    this.visualizerBars.push(bar);
+                }
+            }
+
+            connectWebSocket() {
+                this.updateStatus('Connecting to server...', 'connecting');
+                
+                this.socket = io();
+                
+                this.socket.on('connect', () => {
+                    console.log('✅ Connected to WebRTC server');
+                    this.updateStatus('Connected! Ready to play.', 'connected');
+                    this.reconnectAttempts = 0;
+                    this.requestStreamInfo();
+                });
+
+                this.socket.on('disconnect', () => {
+                    console.log('❌ Disconnected from server');
+                    this.updateStatus('Disconnected from server', 'error');
+                    this.stopAudio();
+                    this.attemptReconnect();
+                });
+
+                this.socket.on('audio-chunk', (data) => {
+                    if (this.isPlaying) {
+                        this.handleAudioChunk(data);
+                    }
+                });
+
+                this.socket.on('stream-started', (info) => {
+                    console.log('🚀 Stream started:', info);
+                    this.updateStatus('Stream is live!', 'connected');
+                });
+
+                this.socket.on('stream-stopped', (info) => {
+                    console.log('🔴 Stream stopped:', info);
+                    this.updateStatus('Stream ended', 'error');
+                    this.stopAudio();
+                });
+
+                this.socket.on('stream-info', (info) => {
+                    console.log('📊 Stream info:', info);
+                    if (info.active) {
+                        this.updateStatus('Stream is active', 'connected');
+                    } else {
+                        this.updateStatus('Waiting for stream...', 'connecting');
+                    }
+                });
+
+                this.socket.on('error', (error) => {
+                    console.error('❌ Socket error:', error);
+                    this.updateStatus(`Error: ${error.message}`, 'error');
+                });
+            }
+
+            async togglePlay() {
+                if (!this.isPlaying) {
+                    await this.startAudio();
+                } else {
+                    this.stopAudio();
+                }
+            }
+
+            async startAudio() {
+                try {
+                    // Create audio element for playback
+                    this.audioElement = new Audio();
+                    this.audioElement.crossOrigin = 'anonymous';
+                    
+                    // Initialize Web Audio API for visualization
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Create audio nodes
+                    const source = this.audioContext.createMediaElementSource(this.audioElement);
+                    this.gainNode = this.audioContext.createGain();
+                    this.analyserNode = this.audioContext.createAnalyser();
+                    
+                    // Configure analyser for visualization
+                    this.analyserNode.fftSize = 256;
+                    this.analyserNode.smoothingTimeConstant = 0.8;
+                    
+                    // Connect nodes
+                    source.connect(this.gainNode);
+                    this.gainNode.connect(this.analyserNode);
+                    this.analyserNode.connect(this.audioContext.destination);
+                    
+                    // Set initial volume
+                    this.setVolume(this.volumeSlider.value);
+                    
+                    // Use the legacy HTTP stream for now (WebSocket audio needs more complex implementation)
+                    this.audioElement.src = '/stream?t=' + Date.now();
+                    await this.audioElement.play();
+                    
+                    this.isPlaying = true;
+                    this.playButton.textContent = '⏸ Pause';
+                    this.playButton.disabled = false;
+                    
+                    this.updateStatus('Playing live stream...', 'connected');
+                    
+                    // Start visualization
+                    this.startVisualization();
+                    
+                    console.log('🎵 Audio playback started');
+                    
+                } catch (error) {
+                    console.error('❌ Failed to start audio:', error);
+                    this.updateStatus('Failed to start audio: ' + error.message, 'error');
+                    this.playButton.disabled = false;
+                }
+            }
+
+            stopAudio() {
+                this.isPlaying = false;
+                this.playButton.textContent = '▶ Play';
+                this.playButton.disabled = false;
+                
+                if (this.audioElement) {
+                    this.audioElement.pause();
+                    this.audioElement.src = '';
+                }
+                
+                if (this.audioContext) {
+                    this.audioContext.close();
+                    this.audioContext = null;
+                }
+                
+                this.updateStatus('Stopped', 'connecting');
+                console.log('⏹ Audio playback stopped');
+            }
+
+            handleAudioChunk(chunk) {
+                // For now, just track latency and quality metrics
+                // Full WebSocket audio implementation would go here
+                const now = Date.now();
+                const latency = now - chunk.timestamp;
+                document.getElementById('latency').textContent = Math.round(latency);
+                
+                // Update quality indicator based on data flow
+                document.getElementById('quality').textContent = 'WebSocket';
+            }
+
+            setVolume(value) {
+                const volume = value / 100;
+                this.volumeDisplay.textContent = value + '%';
+                
+                if (this.gainNode) {
+                    this.gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+                }
+                
+                if (this.audioElement) {
+                    this.audioElement.volume = volume;
+                }
+            }
+
+            startVisualization() {
+                if (!this.analyserNode) return;
+                
+                const bufferLength = this.analyserNode.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                
+                const animate = () => {
+                    if (!this.isPlaying) return;
+                    
+                    this.analyserNode.getByteFrequencyData(dataArray);
+                    
+                    // Update visualizer bars
+                    const barCount = this.visualizerBars.length;
+                    const step = Math.floor(bufferLength / barCount);
+                    
+                    for (let i = 0; i < barCount; i++) {
+                        const value = dataArray[i * step] || 0;
+                        const height = Math.max(2, (value / 255) * 50);
+                        this.visualizerBars[i].style.height = height + 'px';
+                    }
+                    
+                    requestAnimationFrame(animate);
+                };
+                
+                animate();
+            }
+
+            updateStatus(message, type = '') {
+                this.status.textContent = message;
+                this.status.className = `status ${type}`;
+            }
+
+            requestStreamInfo() {
+                if (this.socket) {
+                    this.socket.emit('request-stream-info');
+                }
+            }
+
+            async updateStats() {
+                try {
+                    const response = await fetch('/stats');
+                    const stats = await response.json();
+                    
+                    document.getElementById('clients').textContent = stats.clients.total;
+                    document.getElementById('uptime').textContent = Math.floor(stats.system.uptime / 60) + 'm';
+                    
+                } catch (error) {
+                    console.error('Failed to fetch stats:', error);
+                }
+            }
+
+            attemptReconnect() {
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    const delay = Math.pow(2, this.reconnectAttempts) * 1000; // Exponential backoff
+                    
+                    this.updateStatus(`Reconnecting in ${delay/1000}s... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`, 'connecting');
+                    
+                    setTimeout(() => {
+                        this.connectWebSocket();
+                    }, delay);
+                } else {
+                    this.updateStatus('Failed to reconnect. Please refresh the page.', 'error');
+                }
+            }
+        }
+
+        // Initialize the radio when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new WebRTCRadio();
+        });
+    </script>
+</body>
+</html>
