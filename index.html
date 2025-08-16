@@ -348,8 +348,8 @@
                     this.gainNode.connect(this.analyserNode);
                     this.analyserNode.connect(this.audioContext.destination);
                     
-                    // Set initial volume
-                    this.setVolume(this.volumeSlider.value);
+                    // Set initial volume to 70%
+                    this.setVolume(70);
                     
                     // Use the legacy HTTP stream for now (WebSocket audio needs more complex implementation)
                     this.audioElement.src = '/stream?t=' + Date.now();
