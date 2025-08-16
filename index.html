@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VATRAXOS - Silent Party</title>
+    <!-- Version 2.0 - Fixed volume slider error -->
     <script src="/socket.io/socket.io.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -397,10 +398,9 @@
                 // Full WebSocket audio implementation would go here
                 const now = Date.now();
                 const latency = now - chunk.timestamp;
-                document.getElementById('latency').textContent = Math.round(latency);
                 
-                // Update quality indicator based on data flow
-                document.getElementById('quality').textContent = 'WebSocket';
+                // Note: latency and quality elements removed for minimal design
+                // Could add these back if needed for debugging
             }
 
             setVolume(value) {
