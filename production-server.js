@@ -17,13 +17,18 @@ const io = socketIo(server, {
   },
   transports: ['websocket', 'polling']
 });
-const HTTP_PORT = process.env.PORT || 3000; // Railway.app uses PORT env var
-const RTMP_PORT = process.env.RTMP_PORT || 1936; // Use port 1936 to avoid Railway conflicts
 
-// Production configuration - Optimized for Railway.app
-const MAX_CLIENTS = process.env.MAX_CLIENTS || 150; // Railway can handle more clients
-const ENABLE_CLUSTERING = process.env.ENABLE_CLUSTERING === 'true' && process.env.NODE_ENV === 'production';
-const numCPUs = ENABLE_CLUSTERING ? Math.min(os.cpus().length, 4) : 1; // Railway has better CPU support
+// Environment configuration for Railway and VM setup
+const RAILWAY_MODE = process.env.RAILWAY_MODE === 'true'; // Running on Railway
+const DISABLE_RTMP = process.env.DISABLE_RTMP === 'true';  // Disable local RTMP server
+const INPUT_RTMP_URL = process.env.INPUT_RTMP_URL || 'rtmp://localhost:1935/live/stream'; // External VM RTMP URL
+const HTTP_PORT = process.env.PORT || 3000; // Railway uses PORT env var
+const RTMP_PORT = process.env.RTMP_PORT || 1935;
+
+// Production configuration - Optimized for Railway and VM setup
+const MAX_CLIENTS = process.env.MAX_CLIENTS || (RAILWAY_MODE ? 200 : 150);
+const ENABLE_CLUSTERING = process.env.ENABLE_CLUSTERING === 'true' && process.env.NODE_ENV === 'production' && !RAILWAY_MODE; // Disable clustering on Railway
+const numCPUs = ENABLE_CLUSTERING ? Math.min(os.cpus().length, 4) : 1;
 
 // Global variables to manage streams
 let currentStream = null;
@@ -34,8 +39,8 @@ let isStreamActive = false;
 let audioChunks = [];
 let rtmpStreamInfo = null;
 
-// RTMP Server Configuration - Optimized for production
-const config = {
+// RTMP Server Configuration - Only used when RTMP is not disabled
+const config = DISABLE_RTMP ? null : {
   rtmp: {
     port: RTMP_PORT,
     chunk_size: 60000,
@@ -45,12 +50,12 @@ const config = {
     // Production optimizations
     allow_origin: '*',
     relay: {
-      ffmpeg: process.env.FFMPEG_PATH || '/usr/bin/ffmpeg', // Railway.app FFmpeg path
+      ffmpeg: process.env.FFMPEG_PATH || '/usr/bin/ffmpeg',
       tasks: [
         {
           app: 'live',
           mode: 'push',
-          edge: `rtmp://127.0.0.1:${RTMP_PORT + 1}` // Use RTMP_PORT + 1 for relay
+          edge: 'rtmp://127.0.0.1:1936'
         }
       ]
     }
@@ -58,7 +63,7 @@ const config = {
   http: {
     port: 8000,
     allow_origin: '*',
-    mediaroot: process.env.MEDIA_PATH || './media', // Configurable media path
+    mediaroot: process.env.MEDIA_PATH || './media',
     // Enable HTTP caching
     cache_control: {
       'max-age': 30
@@ -92,19 +97,8 @@ if (ENABLE_CLUSTERING && cluster.isMaster) {
 }
 
 function startServer() {
-  // Try to find an available RTMP port if the default is taken
-  const tryPorts = [RTMP_PORT, 1935, 1937, 8935, 9935];
-  let actualRtmpPort = RTMP_PORT;
-  
-  console.log(`🔍 Attempting to start RTMP server on port ${RTMP_PORT}`);
-  
-  const nms = new NodeMediaServer({
-    ...config,
-    rtmp: {
-      ...config.rtmp,
-      port: actualRtmpPort
-    }
-  });
+  // Initialize NodeMediaServer only if RTMP is not disabled
+  const nms = DISABLE_RTMP ? null : new NodeMediaServer(config);
 
   // Production middleware
   app.use(express.json({ limit: '1mb' }));
@@ -296,10 +290,14 @@ function startServer() {
 
     // Wait a moment for RTMP stream to be fully established
     setTimeout(() => {
-      // Optimized FFmpeg parameters for 150+ users
+      // Optimized FFmpeg parameters for streaming from external RTMP source
       const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+      const inputSource = DISABLE_RTMP ? INPUT_RTMP_URL : 'rtmp://localhost:1935/live/stream';
+      
+      console.log(`🎵 Using input source: ${inputSource}`);
+      
       currentStream = spawn(ffmpegPath, [
-        '-i', `rtmp://localhost:${RTMP_PORT}/live/stream`,
+        '-i', inputSource,              // Use external RTMP URL when RTMP is disabled
         '-vn',                          // No video
         '-c:a', 'libmp3lame',           // MP3 codec
         '-b:a', '128k',                 // Bitrate
@@ -433,7 +431,21 @@ function startServer() {
   });
 
   app.get('/stream-health', (req, res) => {
-    // Check if RTMP stream is available
+    if (DISABLE_RTMP) {
+      // When RTMP is disabled, we can't check local RTMP status
+      res.json({
+        rtmpStreamActive: 'external', // External RTMP source
+        ffmpegActive: isStreamActive,
+        clients: activeClients.size,
+        bufferSize: streamBuffer.length,
+        inputSource: INPUT_RTMP_URL,
+        mode: 'cloud-run',
+        status: isStreamActive ? 'healthy' : 'no-stream'
+      });
+      return;
+    }
+
+    // Check if RTMP stream is available (only when RTMP is enabled)
     const http = require('http');
     const req2 = http.request({
       hostname: 'localhost',
@@ -482,7 +494,8 @@ function startServer() {
 
   app.get('/stats', (req, res) => {
     res.json({
-      server: 'Production RTMP Radio',
+      server: RAILWAY_MODE ? 'Railway WebRTC Radio' : 'Production RTMP Radio',
+      mode: DISABLE_RTMP ? 'external-rtmp' : 'local-rtmp',
       clients: {
         active: activeClients.size,
         max: MAX_CLIENTS,
@@ -491,160 +504,115 @@ function startServer() {
       stream: {
         active: isStreamActive,
         bufferSize: streamBuffer.length,
-        rtmpUrl: `rtmp://localhost:${actualRtmpPort}/live/stream`
+        inputSource: DISABLE_RTMP ? INPUT_RTMP_URL : `rtmp://localhost:${RTMP_PORT}/live/stream`
       },
       system: {
         workers: ENABLE_CLUSTERING ? numCPUs : 1,
         memory: process.memoryUsage(),
-        uptime: process.uptime()
+        uptime: process.uptime(),
+        platform: RAILWAY_MODE ? 'railway' : 'generic'
       },
       timestamp: new Date().toISOString()
     });
   });
 
-  // RTMP Server Events with improved handling
-  nms.on('preConnect', (id, args) => {
-    console.log(`🔗 RTMP PreConnect: ${id}`);
-  });
+  // RTMP Server Events - Only set up when RTMP is enabled
+  if (!DISABLE_RTMP && nms) {
+    nms.on('preConnect', (id, args) => {
+      console.log(`🔗 RTMP PreConnect: ${id}`);
+    });
 
-  nms.on('postConnect', (id, args) => {
-    console.log(`✅ RTMP PostConnect: ${id}`);
-  });
+    nms.on('postConnect', (id, args) => {
+      console.log(`✅ RTMP PostConnect: ${id}`);
+    });
 
-  nms.on('prePublish', (id, StreamPath, args) => {
-    console.log(`📹 RTMP PrePublish: ${id} → ${StreamPath}`);
-  });
+    nms.on('prePublish', (id, StreamPath, args) => {
+      console.log(`📹 RTMP PrePublish: ${id} → ${StreamPath}`);
+    });
 
-  nms.on('postPublish', (id, StreamPath, args) => {
-    console.log(`🚀 RTMP Stream Started! ${id} → ${StreamPath}`);
-    // Reset stream buffer when new publisher starts
-    streamBuffer = Buffer.alloc(0);
-    audioChunks = [];
-    
-    // Store stream info for WebRTC clients
-    rtmpStreamInfo = {
-      id,
-      path: StreamPath,
-      startTime: new Date().toISOString(),
-      args
-    };
-    
-    // Notify all WebRTC clients
-    io.emit('stream-started', rtmpStreamInfo);
-  });
-
-  nms.on('donePublish', (id, StreamPath, args) => {
-    console.log(`🔴 RTMP Stream Stopped: ${id} → ${StreamPath}`);
-    // Stop FFmpeg when publisher disconnects
-    if (currentStream) {
-      console.log('🔌 Publisher disconnected, stopping FFmpeg consumer');
-      currentStream.kill('SIGTERM');
-      currentStream = null;
-      isStreamActive = false;
-    }
-    
-    // Clear stream info and notify WebRTC clients
-    rtmpStreamInfo = null;
-    audioChunks = [];
-    io.emit('stream-stopped', { id, path: StreamPath });
-  });
-
-  // Start RTMP server with error handling
-  try {
-    nms.run();
-    console.log(`✅ RTMP server started successfully on port ${actualRtmpPort}`);
-  } catch (error) {
-    if (error.code === 'EADDRINUSE') {
-      console.error(`❌ Port ${actualRtmpPort} is already in use. Trying alternative ports...`);
-      console.log('💡 Common Railway.app port conflicts:');
-      console.log('   • Port 8080: Often used by Railway for internal services');
-      console.log('   • Port 3000: Default HTTP port');
-      console.log('   • Port 8000: Media server port');
-      console.log('');
-      console.log('🔄 Attempting to restart with port 1937...');
+    nms.on('postPublish', (id, StreamPath, args) => {
+      console.log(`🚀 RTMP Stream Started! ${id} → ${StreamPath}`);
+      // Reset stream buffer when new publisher starts
+      streamBuffer = Buffer.alloc(0);
+      audioChunks = [];
       
-      // Try port 1937 as fallback
-      actualRtmpPort = 1937;
-      const fallbackConfig = {
-        ...config,
-        rtmp: {
-          ...config.rtmp,
-          port: actualRtmpPort
-        }
+      // Store stream info for WebRTC clients
+      rtmpStreamInfo = {
+        id,
+        path: StreamPath,
+        startTime: new Date().toISOString(),
+        args
       };
-      const fallbackNms = new NodeMediaServer(fallbackConfig);
-      fallbackNms.run();
-      console.log(`✅ RTMP server started on fallback port ${actualRtmpPort}`);
-    } else {
-      throw error;
-    }
+      
+      // Notify all WebRTC clients
+      io.emit('stream-started', rtmpStreamInfo);
+    });
+
+    nms.on('donePublish', (id, StreamPath, args) => {
+      console.log(`🔴 RTMP Stream Stopped: ${id} → ${StreamPath}`);
+      // Stop FFmpeg when publisher disconnects
+      if (currentStream) {
+        console.log('🔌 Publisher disconnected, stopping FFmpeg consumer');
+        currentStream.kill('SIGTERM');
+        currentStream = null;
+        isStreamActive = false;
+      }
+      
+      // Clear stream info and notify WebRTC clients
+      rtmpStreamInfo = null;
+      audioChunks = [];
+      io.emit('stream-stopped', { id, path: StreamPath });
+    });
+
+    // Start RTMP server
+    nms.run();
   }
 
   // Start HTTP server with production settings
   server.listen(HTTP_PORT, '0.0.0.0', () => {
-    const railwayDomain = process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN;
-    const railwayTcpProxy = process.env.RAILWAY_TCP_PROXY_DOMAIN; // Railway TCP proxy domain
-    const publicUrl = railwayDomain ? `https://${railwayDomain}` : `http://localhost:${HTTP_PORT}`;
+    const isRailway = RAILWAY_MODE;
+    const publicUrl = isRailway ? 
+      `https://${process.env.RAILWAY_PUBLIC_DOMAIN || 'your-app.railway.app'}` :
+      process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN ? 
+        `https://${process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN}` : 
+        `http://localhost:${HTTP_PORT}`;
     
-    // Determine RTMP URL based on available Railway services
-    let rtmpUrl;
-    if (railwayTcpProxy) {
-      // Railway TCP proxy available
-      rtmpUrl = `rtmp://${railwayTcpProxy}:${actualRtmpPort}/live/stream`;
-    } else if (railwayDomain) {
-      // Try direct Railway domain (might not work)
-      rtmpUrl = `rtmp://${railwayDomain}:${actualRtmpPort}/live/stream`;
-    } else {
-      // Local development
-      rtmpUrl = `rtmp://localhost:${actualRtmpPort}/live/stream`;
-    }
-    
-    console.log('🎵 Production WebRTC Radio Server - Railway.app');
+    console.log(`🎵 ${isRailway ? 'Railway' : 'Production'} WebRTC Radio Server`);
     console.log('==============================================');
     console.log(`🚀 Process ID: ${process.pid}`);
+    console.log(`🔧 Mode: ${DISABLE_RTMP ? 'External RTMP' : 'Local RTMP'}`);
     console.log(`⚡ Workers: ${ENABLE_CLUSTERING ? numCPUs : 1}`);
     console.log(`👥 Max Clients: ${MAX_CLIENTS}`);
     console.log(`📻 Web Player: ${publicUrl}`);
-    console.log(`📡 RTMP Server: ${rtmpUrl}`);
+    
+    if (DISABLE_RTMP) {
+      console.log(`📡 External RTMP: ${INPUT_RTMP_URL}`);
+      console.log('🚂 Railway Mode: RTMP ingest handled by VM');
+    } else {
+      const rtmpUrl = process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN ? 
+        `rtmp://${process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN}:${RTMP_PORT}/live/stream` : 
+        `rtmp://localhost:${RTMP_PORT}/live/stream`;
+      console.log(`📡 RTMP Server: ${rtmpUrl}`);
+    }
+    
     console.log(`🔗 WebSocket: ${publicUrl.replace('http', 'ws')}`);
     console.log('');
     
-    // Enhanced OBS setup instructions
-    console.log('🎬 OBS Setup for Railway.app:');
-    console.log('   1. Open OBS Studio');
-    console.log('   2. Go to Settings → Stream');
-    console.log('   3. Service: Custom');
-    
-    if (railwayTcpProxy) {
-      console.log(`   4. Server: rtmp://${railwayTcpProxy}:${actualRtmpPort}/live`);
-      console.log(`   5. Stream Key: stream`);
-      console.log('');
-      console.log('✅ Railway TCP Proxy detected - RTMP should work!');
-    } else if (railwayDomain) {
-      console.log(`   4. Server: rtmp://${railwayDomain}:${actualRtmpPort}/live`);
-      console.log(`   5. Stream Key: stream`);
-      console.log('');
-      console.log('⚠️  Railway TCP proxy not detected. If RTMP fails:');
-      console.log('   • Check Railway dashboard for TCP proxy settings');
-      console.log(`   • Current RTMP port: ${actualRtmpPort} (changed from 8080 due to conflict)`);
-      console.log('   • Consider migrating to Fly.io for better RTMP support');
+    if (!DISABLE_RTMP) {
+      console.log('🎬 OBS Setup:');
+      console.log('   1. Open OBS Studio');
+      console.log('   2. Go to Settings → Stream');
+      console.log('   3. Service: Custom');
+      console.log(`   4. Server: rtmp://localhost:${RTMP_PORT}/live`);
+      console.log('   5. Stream Key: stream');
+      console.log('   6. Click "Start Streaming"');
     } else {
-      console.log(`   4. Server: rtmp://localhost:${actualRtmpPort}/live`);
-      console.log(`   5. Stream Key: stream`);
+      console.log('🎬 Railway + VM Setup:');
+      console.log('   • VM handles RTMP ingest on port 1935');
+      console.log('   • Railway serves web interface');
+      console.log('   • Stream to your VM, Railway consumes from VM');
     }
-    console.log('   6. Click "Start Streaming"');
-    console.log('');
-    console.log('🔧 RTMP Troubleshooting:');
-    console.log(`   • Test connection: telnet ${railwayDomain || 'localhost'} ${actualRtmpPort}`);
-    console.log('   • Port 8080 was conflicting with Railway services');
-    console.log(`   • Now using port ${actualRtmpPort} instead`);
-    console.log('   • Check Railway logs for RTMP server startup');
-    console.log('   • Alternative: Use ngrok for local development');
-    console.log('');
-    console.log('🚀 Quick RTMP Test:');
-    console.log(`   ffmpeg -re -f lavfi -i sine=frequency=1000:duration=5 \\`);
-    console.log(`     -c:a aac -f flv ${rtmpUrl}`);
-    console.log('');
+    
     console.log('');
     console.log('🌐 WebRTC Features:');
     console.log('   • Real-time audio streaming');
@@ -677,8 +645,10 @@ function startServer() {
         currentStream.kill('SIGTERM');
       }
       
-      nms.stop();
-      console.log('🎵 RTMP server stopped');
+      if (!DISABLE_RTMP && nms) {
+        nms.stop();
+        console.log('🎵 RTMP server stopped');
+      }
       
       process.exit(0);
     });

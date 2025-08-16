@@ -1,0 +1,58 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: webrtc-radio
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/execution-environment: gen2
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/memory: "1Gi"
+        run.googleapis.com/cpu: "1000m"
+        run.googleapis.com/max-instances: "10"
+        run.googleapis.com/min-instances: "0"
+    spec:
+      containerConcurrency: 200
+      timeoutSeconds: 300
+      containers:
+      - image: gcr.io/YOUR_PROJECT_ID/webrtc-radio:latest
+        ports:
+        - containerPort: 8080
+          name: http1
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: CLOUD_RUN
+          value: "true"
+        - name: DISABLE_RTMP
+          value: "true"
+        - name: PORT
+          value: "8080"
+        - name: MAX_CLIENTS
+          value: "200"
+        - name: INPUT_RTMP_URL
+          value: "rtmp://YOUR_VM_IP:1935/live/stream"
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+  traffic:
+  - percent: 100
+    latestRevision: true

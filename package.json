@@ -10,6 +10,8 @@
     "direct": "node direct-server.js",
     "production": "node production-server.js",
     "production-cluster": "ENABLE_CLUSTERING=true MAX_CLIENTS=200 node production-server.js",
+    "railway": "RAILWAY_MODE=true DISABLE_RTMP=true MAX_CLIENTS=200 node production-server.js",
+    "railway-local": "RAILWAY_MODE=true DISABLE_RTMP=true INPUT_RTMP_URL=rtmp://localhost:1935/live/stream node production-server.js",
     "dev": "nodemon production-server.js"
   },
   "keywords": [
