@@ -18,7 +18,7 @@ const io = socketIo(server, {
   transports: ['websocket', 'polling']
 });
 const HTTP_PORT = process.env.PORT || 3000; // Railway.app uses PORT env var
-const RTMP_PORT = process.env.RTMP_PORT || 8080; // Try port 8080 instead of 1935 for Railway
+const RTMP_PORT = process.env.RTMP_PORT || 1936; // Use port 1936 to avoid Railway conflicts
 
 // Production configuration - Optimized for Railway.app
 const MAX_CLIENTS = process.env.MAX_CLIENTS || 150; // Railway can handle more clients
@@ -45,12 +45,12 @@ const config = {
     // Production optimizations
     allow_origin: '*',
     relay: {
-      ffmpeg: process.env.FFMPEG_PATH || '/usr/bin/ffmpeg', // Render.com FFmpeg path
+      ffmpeg: process.env.FFMPEG_PATH || '/usr/bin/ffmpeg', // Railway.app FFmpeg path
       tasks: [
         {
           app: 'live',
           mode: 'push',
-          edge: 'rtmp://127.0.0.1:1936'
+          edge: `rtmp://127.0.0.1:${RTMP_PORT + 1}` // Use RTMP_PORT + 1 for relay
         }
       ]
     }
@@ -92,7 +92,19 @@ if (ENABLE_CLUSTERING && cluster.isMaster) {
 }
 
 function startServer() {
-  const nms = new NodeMediaServer(config);
+  // Try to find an available RTMP port if the default is taken
+  const tryPorts = [RTMP_PORT, 1935, 1937, 8935, 9935];
+  let actualRtmpPort = RTMP_PORT;
+  
+  console.log(`🔍 Attempting to start RTMP server on port ${RTMP_PORT}`);
+  
+  const nms = new NodeMediaServer({
+    ...config,
+    rtmp: {
+      ...config.rtmp,
+      port: actualRtmpPort
+    }
+  });
 
   // Production middleware
   app.use(express.json({ limit: '1mb' }));
@@ -287,7 +299,7 @@ function startServer() {
       // Optimized FFmpeg parameters for 150+ users
       const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
       currentStream = spawn(ffmpegPath, [
-        '-i', 'rtmp://localhost:1935/live/stream',
+        '-i', `rtmp://localhost:${RTMP_PORT}/live/stream`,
         '-vn',                          // No video
         '-c:a', 'libmp3lame',           // MP3 codec
         '-b:a', '128k',                 // Bitrate
@@ -479,7 +491,7 @@ function startServer() {
       stream: {
         active: isStreamActive,
         bufferSize: streamBuffer.length,
-        rtmpUrl: `rtmp://localhost:${RTMP_PORT}/live/stream`
+        rtmpUrl: `rtmp://localhost:${actualRtmpPort}/live/stream`
       },
       system: {
         workers: ENABLE_CLUSTERING ? numCPUs : 1,
@@ -537,8 +549,36 @@ function startServer() {
     io.emit('stream-stopped', { id, path: StreamPath });
   });
 
-  // Start RTMP server
-  nms.run();
+  // Start RTMP server with error handling
+  try {
+    nms.run();
+    console.log(`✅ RTMP server started successfully on port ${actualRtmpPort}`);
+  } catch (error) {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`❌ Port ${actualRtmpPort} is already in use. Trying alternative ports...`);
+      console.log('💡 Common Railway.app port conflicts:');
+      console.log('   • Port 8080: Often used by Railway for internal services');
+      console.log('   • Port 3000: Default HTTP port');
+      console.log('   • Port 8000: Media server port');
+      console.log('');
+      console.log('🔄 Attempting to restart with port 1937...');
+      
+      // Try port 1937 as fallback
+      actualRtmpPort = 1937;
+      const fallbackConfig = {
+        ...config,
+        rtmp: {
+          ...config.rtmp,
+          port: actualRtmpPort
+        }
+      };
+      const fallbackNms = new NodeMediaServer(fallbackConfig);
+      fallbackNms.run();
+      console.log(`✅ RTMP server started on fallback port ${actualRtmpPort}`);
+    } else {
+      throw error;
+    }
+  }
 
   // Start HTTP server with production settings
   server.listen(HTTP_PORT, '0.0.0.0', () => {
@@ -550,13 +590,13 @@ function startServer() {
     let rtmpUrl;
     if (railwayTcpProxy) {
       // Railway TCP proxy available
-      rtmpUrl = `rtmp://${railwayTcpProxy}:${RTMP_PORT}/live/stream`;
+      rtmpUrl = `rtmp://${railwayTcpProxy}:${actualRtmpPort}/live/stream`;
     } else if (railwayDomain) {
       // Try direct Railway domain (might not work)
-      rtmpUrl = `rtmp://${railwayDomain}:${RTMP_PORT}/live/stream`;
+      rtmpUrl = `rtmp://${railwayDomain}:${actualRtmpPort}/live/stream`;
     } else {
       // Local development
-      rtmpUrl = `rtmp://localhost:${RTMP_PORT}/live/stream`;
+      rtmpUrl = `rtmp://localhost:${actualRtmpPort}/live/stream`;
     }
     
     console.log('🎵 Production WebRTC Radio Server - Railway.app');
@@ -576,27 +616,28 @@ function startServer() {
     console.log('   3. Service: Custom');
     
     if (railwayTcpProxy) {
-      console.log(`   4. Server: rtmp://${railwayTcpProxy}:${RTMP_PORT}/live`);
+      console.log(`   4. Server: rtmp://${railwayTcpProxy}:${actualRtmpPort}/live`);
       console.log(`   5. Stream Key: stream`);
       console.log('');
       console.log('✅ Railway TCP Proxy detected - RTMP should work!');
     } else if (railwayDomain) {
-      console.log(`   4. Server: rtmp://${railwayDomain}:${RTMP_PORT}/live`);
+      console.log(`   4. Server: rtmp://${railwayDomain}:${actualRtmpPort}/live`);
       console.log(`   5. Stream Key: stream`);
       console.log('');
       console.log('⚠️  Railway TCP proxy not detected. If RTMP fails:');
       console.log('   • Check Railway dashboard for TCP proxy settings');
-      console.log('   • Try using port 8080 instead of 1935');
+      console.log(`   • Current RTMP port: ${actualRtmpPort} (changed from 8080 due to conflict)`);
       console.log('   • Consider migrating to Fly.io for better RTMP support');
     } else {
-      console.log(`   4. Server: rtmp://localhost:${RTMP_PORT}/live`);
+      console.log(`   4. Server: rtmp://localhost:${actualRtmpPort}/live`);
       console.log(`   5. Stream Key: stream`);
     }
     console.log('   6. Click "Start Streaming"');
     console.log('');
     console.log('🔧 RTMP Troubleshooting:');
-    console.log(`   • Test connection: telnet ${railwayDomain || 'localhost'} ${RTMP_PORT}`);
-    console.log('   • If port 8080 fails, try 1935, 1936, or 8935');
+    console.log(`   • Test connection: telnet ${railwayDomain || 'localhost'} ${actualRtmpPort}`);
+    console.log('   • Port 8080 was conflicting with Railway services');
+    console.log(`   • Now using port ${actualRtmpPort} instead`);
     console.log('   • Check Railway logs for RTMP server startup');
     console.log('   • Alternative: Use ngrok for local development');
     console.log('');
