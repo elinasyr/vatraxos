@@ -313,7 +313,10 @@ function startServer() {
         '-fflags', '+genpts',
         '-reconnect', '1',              // Auto-reconnect on failure
         '-reconnect_streamed', '1',     // Reconnect for streamed input
-        '-reconnect_delay_max', '2',    // Max reconnect delay
+        '-reconnect_delay_max', '5',    // Max reconnect delay (increased)
+        '-timeout', '10000000',         // Connection timeout (10 seconds in microseconds)
+        '-rw_timeout', '10000000',      // Read/write timeout (10 seconds)
+        '-stimeout', '10000000',        // Socket timeout (10 seconds)
         '-loglevel', 'error',           // Only show errors
         '-'                             // Output to stdout
       ]);
@@ -366,8 +369,12 @@ function startServer() {
 
       currentStream.stderr.on('data', (data) => {
         const msg = data.toString().trim();
-        if (msg.includes('Connection refused') || msg.includes('No route to host')) {
+        if (msg.includes('Connection refused') || msg.includes('No route to host') || msg.includes('Operation timed out')) {
           console.log('⚠️  RTMP stream not ready, retrying...');
+          // For external RTMP sources, wait longer before retrying
+          if (DISABLE_RTMP) {
+            console.log(`⚠️  External RTMP source (${INPUT_RTMP_URL}) not accessible. Check if the stream is live.`);
+          }
         } else if (msg.includes('error') || msg.includes('Error')) {
           console.error(`FFmpeg Error: ${msg}`);
         }
