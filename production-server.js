@@ -313,10 +313,9 @@ function startServer() {
         '-fflags', '+genpts',
         '-reconnect', '1',              // Auto-reconnect on failure
         '-reconnect_streamed', '1',     // Reconnect for streamed input
-        '-reconnect_delay_max', '5',    // Max reconnect delay (increased)
+        '-reconnect_delay_max', '5',    // Max reconnect delay
         '-timeout', '10000000',         // Connection timeout (10 seconds in microseconds)
         '-rw_timeout', '10000000',      // Read/write timeout (10 seconds)
-        '-stimeout', '10000000',        // Socket timeout (10 seconds)
         '-loglevel', 'error',           // Only show errors
         '-'                             // Output to stdout
       ]);
